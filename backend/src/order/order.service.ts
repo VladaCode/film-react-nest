@@ -6,69 +6,99 @@ import {
 import { FilmsRepository } from 'src/repository/films.repository';
 import { CreateOrderDto } from './dto/order.dto';
 
-// Сервис для обработки бизнес-логики бронирования билетов
-// Отвечает за создание заказов, проверку доступности мест и резервирование
+type FilmDoc = Awaited<ReturnType<FilmsRepository['findById']>>;
+
 @Injectable()
 export class OrderService {
-  // Внедрение репозитория для работы с данными фильмов
   constructor(private readonly filmsRepository: FilmsRepository) {}
 
-  // Основной метод создания заказа на бронирование билетов
-  async create(createOrderDto: CreateOrderDto) {
-    const { filmId, sessionId, seats } = createOrderDto;
-
-    // Поиск фильма по ID в базе данных
-    const film = await this.filmsRepository.findById(filmId);
-    if (!film) {
-      throw new BadRequestException('Film not found');
+  // Создать бронь для набора билетов
+  async create({ tickets }: CreateOrderDto) {
+    if (!tickets?.length) {
+      throw new BadRequestException('No tickets provided');
     }
 
-    // Поиск конкретного сеанса в расписании фильма
-    const session = film.schedule.find((s) => s.id === sessionId);
-    if (!session) {
-      throw new BadRequestException('Session not found');
-    }
+    // Кэш филмов, чтобы не ходить в БД много раз
+    const filmCache = new Map<string, FilmDoc>();
 
-    // Валидация координат мест - проверка что места существуют в зале
-    for (const seat of seats) {
-      if (
-        seat.row < 1 ||
-        seat.row > session.rows ||
-        seat.seat < 1 ||
-        seat.seat > session.seats
-      ) {
+    // Для последующего сохранения: какие сеансы изменились
+    // key: `${filmId}:${sessionId}` -> { film, sessionId }
+    const touchedSessions = new Map<
+      string,
+      { film: FilmDoc; sessionId: string }
+    >();
+
+    // Проверка и подготовка бронирования
+    const results = [];
+
+    for (const t of tickets) {
+      const filmId = t.film;
+      const sessionId = t.session;
+
+      // 1) Получаем фильм (с кэшем)
+      let film = filmCache.get(filmId);
+      if (!film) {
+        film = await this.filmsRepository.findById(filmId);
+        if (!film) throw new BadRequestException(`Film ${filmId} not found`);
+        filmCache.set(filmId, film);
+      }
+
+      // 2) Находим сеанс
+      const session = film.schedule.find((s) => s.id === sessionId);
+      if (!session) {
+        throw new BadRequestException(`Session ${sessionId} not found`);
+      }
+
+      // 3) Валидируем координаты места
+      const inRows = t.row >= 1 && t.row <= session.rows;
+      const inSeats = t.seat >= 1 && t.seat <= session.seats;
+      if (!inRows || !inSeats) {
         throw new BadRequestException(
-          `Seat ${seat.row}:${seat.seat} is out of range. Hall has ${session.rows} rows and ${session.seats} seats per row`,
+          `Seat ${t.row}:${t.seat} is out of range. Hall has ${session.rows} rows and ${session.seats} seats per row`,
         );
       }
-    }
 
-    // Преобразование координат мест в строковый формат 'ряд:место'
-    const seatKeys = seats.map((seat) => `${seat.row}:${seat.seat}`);
-
-    // Проверка что выбранные места не заняты другими зрителями
-    for (const seatKey of seatKeys) {
-      if (session.taken.includes(seatKey)) {
-        throw new ConflictException(`Seat ${seatKey} is already taken`);
+      // 4) Проверяем, что место свободно
+      const key = `${t.row}:${t.seat}`;
+      if (session.taken.includes(key)) {
+        throw new ConflictException(`Seat ${key} is already taken`);
       }
+
+      // 5) Резервируем место в памяти
+      session.taken.push(key);
+
+      // 6) Запоминаем, что этот сеанс надо будет сохранить в БД
+      touchedSessions.set(`${filmId}:${sessionId}`, { film, sessionId });
+
+      // 7) Готовим элемент ответа
+      results.push({
+        id: `${filmId}-${sessionId}-${key}`,
+        film: filmId,
+        session: sessionId,
+        daytime: session.daytime,
+        day: new Date(session.daytime).toLocaleDateString('ru-RU'),
+        time: new Date(session.daytime).toLocaleTimeString('ru-RU', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        row: t.row,
+        seat: t.seat,
+        price: session.price,
+      });
     }
 
-    // Резервирование мест - добавление в массив занятых
-    session.taken.push(...seatKeys);
+    // Сохраняем изменения по каждому затронутому сеансу
+    for (const { film, sessionId } of touchedSessions.values()) {
+      await this.filmsRepository.updateFilm(film.id, {
+        schedule: film.schedule.map((s) =>
+          s.id === sessionId ? { ...s, taken: s.taken } : s,
+        ),
+      });
+    }
 
-    // Сохранение изменений в базе данных - обновление расписания сеанса
-    await this.filmsRepository.updateFilm(filmId, {
-      schedule: film.schedule.map((s) =>
-        s.id === sessionId ? { ...s, taken: session.taken } : s,
-      ),
-    });
-
-    // Возврат успешного ответа клиенту
     return {
-      success: true,
-      message: `Successfully booked ${seats.length} seat(s)`,
-      bookedSeats: seatKeys,
-      totalPrice: seats.length * session.price, // Расчет общей стоимости
+      total: results.length,
+      items: results,
     };
   }
 }

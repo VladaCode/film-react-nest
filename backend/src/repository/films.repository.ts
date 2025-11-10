@@ -38,7 +38,7 @@ export class FilmsRepository {
   // Преобразование документа Mongoose в FilmDto
   private toFilmDto(film: Film & { _id: any }): FilmDto {
     return {
-      id: film.id, // Используем поле id из схемы
+      id: film._id,
       rating: film.rating,
       director: film.director,
       tags: film.tags,

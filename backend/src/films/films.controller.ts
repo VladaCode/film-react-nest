@@ -2,23 +2,21 @@ import { Controller, Get, Param } from '@nestjs/common';
 import { FilmsService } from './films.service';
 import { FilmDto } from './dto/films.dto';
 
-// Контроллер для работы с фильмами и расписанием сеансов
-@Controller('api/afisha/films')
+@Controller('api/afisha/films') // Базовый путь для всех маршрутов фильмов
 export class FilmsController {
   constructor(private readonly filmsService: FilmsService) {}
 
-  // GET эндпоинт для получения списка всех фильмов
-  // Возвращает массив фильмов с основной информацией
-  @Get()
-  async findAll(): Promise<FilmDto[]> {
+  @Get() // GET /api/afisha/films — получить список всех фильмов
+  async findAll(): Promise<{ total: number; items: FilmDto[] }> {
+    // Возвращаем фильмы в формате { total, items }
     return this.filmsService.findAll();
   }
 
-  // GET эндпоинт для получения конкретного фильма с расписанием сеансов
-  // :id - параметр пути (UUID фильма)
-  // Возвращает полную информацию о фильме включая все сеансы
-  @Get(':id/schedule')
-  async findOne(@Param('id') id: string): Promise<FilmDto> {
-    return this.filmsService.findOne(id);
+  @Get(':id/schedule') // GET /api/afisha/films/:id/schedule — расписание сеансов по фильму
+  async getSchedule(
+    @Param('id') id: string, // Получаем id фильма из URL
+  ): Promise<{ total: number; items: any[] }> {
+    // Возвращаем список сеансов в формате { total, items }
+    return this.filmsService.getSchedule(id);
   }
 }
