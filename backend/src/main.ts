@@ -1,19 +1,37 @@
+import { ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common';
+
+const parseCorsOrigins = (value: string): string[] =>
+  value
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 
 async function bootstrap() {
-  // Создаём экземпляр приложения Nest на базе корневого модуля
   const app = await NestFactory.create(AppModule);
+  const configService = app.get(ConfigService);
 
-  // Разрешаем запросы с фронта
+  const corsOriginsValue =
+    configService.get<string>('CORS_ORIGINS') ||
+    'http://localhost:5173,http://localhost:5174';
+  const allowedOrigins = parseCorsOrigins(corsOriginsValue);
+
   app.enableCors({
-    origin: 'http://localhost:5173',
+    origin: (
+      origin: string | undefined,
+      callback: (error: Error | null, allow?: boolean) => void,
+    ) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`Origin ${origin} is not allowed by CORS`), false);
+    },
   });
 
-  // Глобальная валидация входящих DTO:
-  // - whitelist: выкидывает лишние поля
-  // - transform: приводит типы и применяет @Type() из class-transformer
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -21,8 +39,7 @@ async function bootstrap() {
     }),
   );
 
-  // Стартуем сервер на порту из .env (PORT) или 3000 по умолчанию
-  const port = Number(process.env.PORT) || 3000;
+  const port = Number(configService.get<string>('PORT') || 3000);
   await app.listen(port);
 }
 

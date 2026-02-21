@@ -1,29 +1,25 @@
 import { Module } from '@nestjs/common';
-import { ServeStaticModule } from '@nestjs/serve-static';
 import { ConfigModule } from '@nestjs/config';
-import { MongooseModule } from '@nestjs/mongoose';
+import { ServeStaticModule } from '@nestjs/serve-static';
 import * as path from 'path';
-
+import { resolveDatabaseDriver } from './database/database-driver';
+import { DatabaseModule } from './database/database.module';
 import { FilmsModule } from './films/films.module';
 import { OrderModule } from './order/order.module';
+import { AppRepositoryModule } from './repository/app-repository.module';
+
+const getDatabaseDriver = () =>
+  resolveDatabaseDriver(process.env.DATABASE_DRIVER);
 
 @Module({
   imports: [
-    // Модуль конфигурации
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-
-    // Подключение MongoDB (ОСНОВНОЕ подключение)
-    MongooseModule.forRoot(
-      process.env.DATABASE_URL || 'mongodb://localhost:27017/prac',
-    ),
-
-    // Модули приложения
+    DatabaseModule.register(getDatabaseDriver()),
+    AppRepositoryModule.register(getDatabaseDriver()),
     FilmsModule,
     OrderModule,
-
-    // Раздача статики
     ServeStaticModule.forRoot({
       rootPath: path.join(__dirname, '..', 'public', 'content', 'afisha'),
       serveRoot: '/content/afisha',

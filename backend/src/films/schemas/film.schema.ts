@@ -1,15 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { HydratedDocument } from 'mongoose';
 
-/**
- * Схема Mongoose для сеанса фильма
- * Соответствует структуре SessionDto
- */
-
-// @Prop - декоратор для определения свойств схемы Mongoose
-// Создает поле в MongoDB коллекции с указанными настройками
 @Schema({ _id: false })
-export class Session {
+export class SessionModel {
   @Prop({ required: true })
   id: string;
 
@@ -32,13 +25,9 @@ export class Session {
   taken: string[];
 }
 
-/**
- * Схема Mongoose для фильма
- * Соответствует структуре FilmDto
- */
-@Schema()
-export class Film extends Document {
-  @Prop({ required: true })
+@Schema({ collection: 'films' })
+export class FilmModel {
+  @Prop({ required: true, unique: true, index: true })
   id: string;
 
   @Prop({ required: true })
@@ -65,8 +54,10 @@ export class Film extends Document {
   @Prop({ required: true })
   description: string;
 
-  @Prop({ type: [Session], required: true })
-  schedule: Session[];
+  @Prop({ type: [SessionModel], required: true })
+  schedule: SessionModel[];
 }
 
-export const FilmSchema = SchemaFactory.createForClass(Film);
+export type FilmDocument = HydratedDocument<FilmModel>;
+
+export const FilmSchema = SchemaFactory.createForClass(FilmModel);
