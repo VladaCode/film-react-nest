@@ -1,0 +1,11 @@
+node_modules
+dist
+storybook-static
+.git
+.github
+.idea
+.vscode
+*.log
+.env
+npm-debug.log*
+yarn-error.log*
