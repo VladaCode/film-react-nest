@@ -1,7 +1,10 @@
-import { ValidationPipe } from '@nestjs/common';
+import { LoggerService, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { DevLogger } from './logger/dev.logger';
+import { JsonLogger } from './logger/json.logger';
+import { TskvLogger } from './logger/tskv.logger';
 
 const parseCorsOrigins = (value: string): string[] =>
   value
@@ -9,9 +12,28 @@ const parseCorsOrigins = (value: string): string[] =>
     .map((origin) => origin.trim())
     .filter(Boolean);
 
+type LoggerMode = 'dev' | 'json' | 'tskv';
+
+const createLogger = (mode?: string): LoggerService => {
+  const normalized = mode?.toLowerCase() as LoggerMode | undefined;
+
+  if (normalized === 'json') {
+    return new JsonLogger();
+  }
+
+  if (normalized === 'tskv') {
+    return new TskvLogger();
+  }
+
+  return new DevLogger();
+};
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true,
+  });
   const configService = app.get(ConfigService);
+  app.useLogger(createLogger(configService.get<string>('LOG_FORMAT')));
 
   const corsOriginsValue =
     configService.get<string>('CORS_ORIGINS') ||
